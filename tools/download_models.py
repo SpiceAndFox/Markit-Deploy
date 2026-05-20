@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
 Usage:
-  python -m pip install -U modelscope
-  python tools/download_models.py --source modelscope --model-root /ckpts/markit/models
+  python -m pip install -U modelscope huggingface_hub hf_transfer hf_xet
+  python tools/download_models.py --model-root /ckpts/markit/models
 
-Hugging Face is still available as a fallback:
-  python -m pip install -U huggingface_hub hf_transfer hf_xet
+Default behavior:
+  - Qwen models are downloaded from ModelScope.
+  - YOLOE is downloaded from the Hugging Face-compatible endpoint configured
+    by YOLOE_HF_ENDPOINT, for example https://hf-mirror.com.
+
+Hugging Face can still be used for all models:
   python tools/download_models.py --source huggingface --model-root /ckpts/markit/models
 """
 
