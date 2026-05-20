@@ -1,0 +1,121 @@
+name: Build and Push Docker Image
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the built image to Docker Hub
+        required: true
+        type: boolean
+        default: true
+      transformers_ref:
+        description: Transformers git ref used by the Dockerfile
+        required: false
+        type: string
+        default: main
+      install_flash_attn:
+        description: Install flash-attn during image build
+        required: true
+        type: choice
+        options:
+          - "0"
+          - "1"
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image name
+        id: image
+        shell: bash
+        env:
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          repository_name="${GITHUB_REPOSITORY#*/}"
+
+          if [[ -n "${DOCKERHUB_REPOSITORY}" ]]; then
+            image="${DOCKERHUB_REPOSITORY}"
+          elif [[ -n "${DOCKERHUB_USERNAME}" ]]; then
+            image="${DOCKERHUB_USERNAME}/${repository_name}"
+          else
+            image="local/${repository_name}"
+          fi
+
+          image="$(echo "${image}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Validate Docker Hub credentials
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -z "${DOCKERHUB_USERNAME}" || -z "${DOCKERHUB_TOKEN}" ]]; then
+            echo "::error::Set repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN before pushing to Docker Hub."
+            exit 1
+          fi
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and optionally push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            INSTALL_FLASH_ATTN=${{ inputs.install_flash_attn || vars.INSTALL_FLASH_ATTN || '0' }}
+            TRANSFORMERS_REF=${{ inputs.transformers_ref || vars.TRANSFORMERS_REF || 'main' }}
+            NUMPY_VERSION=${{ vars.NUMPY_VERSION || '1.26.4' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+          provenance: false
