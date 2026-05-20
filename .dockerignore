@@ -1,0 +1,17 @@
+.git
+.cache
+__pycache__
+*.pyc
+*.pyo
+*.tmp
+outputs
+data
+models
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.npy
+*.pt
+*.pth
+*.safetensors
