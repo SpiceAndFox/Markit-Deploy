@@ -18,6 +18,16 @@ on:
         required: true
         type: boolean
         default: true
+      torch_version:
+        description: PyTorch version used by the Dockerfile
+        required: false
+        type: string
+        default: 2.6.0
+      torchvision_version:
+        description: TorchVision version used by the Dockerfile
+        required: false
+        type: string
+        default: 0.21.0
       transformers_ref:
         description: Transformers git ref used by the Dockerfile
         required: false
@@ -113,6 +123,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
+            TORCH_VERSION=${{ inputs.torch_version || vars.TORCH_VERSION || '2.6.0' }}
+            TORCHVISION_VERSION=${{ inputs.torchvision_version || vars.TORCHVISION_VERSION || '0.21.0' }}
             INSTALL_FLASH_ATTN=${{ inputs.install_flash_attn || vars.INSTALL_FLASH_ATTN || '0' }}
             TRANSFORMERS_REF=${{ inputs.transformers_ref || vars.TRANSFORMERS_REF || 'main' }}
             NUMPY_VERSION=${{ vars.NUMPY_VERSION || '1.26.4' }}
