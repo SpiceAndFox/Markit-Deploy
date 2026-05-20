@@ -2,7 +2,7 @@
 """
 Usage:
   python -m pip install -U modelscope huggingface_hub hf_transfer hf_xet
-  python tools/download_models.py --model-root /ckpts/markit/models
+  python tools/download_models.py --model-root ./ckpts/markit/models
 
 Default behavior:
   - Qwen models are downloaded from ModelScope.
