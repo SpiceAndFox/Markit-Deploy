@@ -28,11 +28,16 @@ on:
         required: false
         type: string
         default: 0.21.0
-      transformers_ref:
-        description: Transformers git ref used by the Dockerfile
+      transformers_version:
+        description: Transformers PyPI version used by the Dockerfile
         required: false
         type: string
-        default: main
+        default: 4.49.0
+      ultralytics_version:
+        description: Ultralytics version used for YOLOE overlay generation
+        required: false
+        type: string
+        default: 8.3.101
       install_flash_attn:
         description: Install flash-attn during image build
         required: true
@@ -126,7 +131,8 @@ jobs:
             TORCH_VERSION=${{ inputs.torch_version || vars.TORCH_VERSION || '2.6.0' }}
             TORCHVISION_VERSION=${{ inputs.torchvision_version || vars.TORCHVISION_VERSION || '0.21.0' }}
             INSTALL_FLASH_ATTN=${{ inputs.install_flash_attn || vars.INSTALL_FLASH_ATTN || '0' }}
-            TRANSFORMERS_REF=${{ inputs.transformers_ref || vars.TRANSFORMERS_REF || 'main' }}
+            TRANSFORMERS_VERSION=${{ inputs.transformers_version || vars.TRANSFORMERS_VERSION || '4.49.0' }}
+            ULTRALYTICS_VERSION=${{ inputs.ultralytics_version || vars.ULTRALYTICS_VERSION || '8.3.101' }}
             NUMPY_VERSION=${{ vars.NUMPY_VERSION || '1.26.4' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true

@@ -10,7 +10,8 @@ services:
         TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
         TORCHVISION_VERSION: ${TORCHVISION_VERSION:-0.21.0}
         INSTALL_FLASH_ATTN: ${INSTALL_FLASH_ATTN:-0}
-        TRANSFORMERS_REF: ${TRANSFORMERS_REF:-main}
+        TRANSFORMERS_VERSION: ${TRANSFORMERS_VERSION:-4.49.0}
+        ULTRALYTICS_VERSION: ${ULTRALYTICS_VERSION:-8.3.101}
         NUMPY_VERSION: ${NUMPY_VERSION:-1.26.4}
         HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
         HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
@@ -33,6 +34,14 @@ services:
       HF_HUB_ENABLE_HF_TRANSFER: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       PYTHONUNBUFFERED: "1"
+      QWEN25_VL_MODEL_PATH: ${QWEN25_VL_MODEL_PATH:-/models/local/Qwen2.5-VL-7B-Instruct}
+      OVERLAY_ROOT: ${OVERLAY_ROOT:-/data/markit_overlay_videos}
+      RAW_VIDEO_ROOT: ${RAW_VIDEO_ROOT:-/data/charades/videos}
+      TEST_PATH: ${TEST_PATH:-/data/charades/test.json}
+      SAVE_PATH: ${SAVE_PATH:-outputs/predictions/charades_markit_qwen25vl.json}
+      YOLOE_WEIGHTS_PATH: ${YOLOE_WEIGHTS_PATH:-/models/local/YOLOE-Large/yoloe-v8l-seg.pt}
+      MAX_SAMPLES: ${MAX_SAMPLES:--1}
+      NUM_SAMPLED_FRAMES: ${NUM_SAMPLED_FRAMES:-32}
       HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
       HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
       ALL_PROXY: ${DOCKER_ALL_PROXY:-}
@@ -49,16 +58,7 @@ services:
       # Hugging Face cache is writable and shared across container rebuilds.
       - ${HF_CACHE_DIR:-./.cache/huggingface}:/models/huggingface
       # Dataset and generated MarkIt overlays should live under this host path.
-      - ${MARKIT_DATA_ROOT:-./data}:/data:ro
+      - ${MARKIT_DATA_ROOT:-./data}:/data:${MARKIT_DATA_VOLUME_MODE:-ro}
       # Predictions, temporary rendered videos, and logs.
       - ${MARKIT_OUTPUT_ROOT:-./outputs}:/workspace/MarkIt/outputs
-    command: >
-      bash -lc "python eval/vlm_mr_markit.py
-      --backend qwen2_5_vl
-      --model_path ${QWEN25_VL_MODEL_PATH:-/models/local/Qwen2.5-VL-7B-Instruct}
-      --overlay_root ${OVERLAY_ROOT:-/data/markit_overlay_videos}
-      --raw_video_root ${RAW_VIDEO_ROOT:-/data/charades/videos}
-      --test_path ${TEST_PATH:-/data/charades/test.json}
-      --save_path ${SAVE_PATH:-outputs/predictions/charades_markit_qwen25vl.json}
-      --max_samples ${MAX_SAMPLES:--1}
-      --num_sampled_frames ${NUM_SAMPLED_FRAMES:-32}"
+    command: sleep infinity

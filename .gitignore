@@ -51,3 +51,8 @@ tmp/
 *.jpeg
 *.tif
 *.tiff
+
+# 自定义
+Charades-STA
+Charades-Video
+Ckpts

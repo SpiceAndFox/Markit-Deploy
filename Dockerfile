@@ -8,7 +8,8 @@ ARG TORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
 ARG NUMPY_VERSION=1.26.4
 ARG INSTALL_FLASH_ATTN=0
-ARG TRANSFORMERS_REF=main
+ARG TRANSFORMERS_VERSION=4.49.0
+ARG ULTRALYTICS_VERSION=8.3.101
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
 ARG ALL_PROXY=
@@ -86,11 +87,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \
       av==13.1.0 \
       "qwen-vl-utils[decord]==0.0.8" \
+      "ultralytics==${ULTRALYTICS_VERSION}" \
       hf_transfer
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \
-      "git+https://github.com/huggingface/transformers@${TRANSFORMERS_REF}"
+      "transformers==${TRANSFORMERS_VERSION}"
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then \
