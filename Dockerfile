@@ -10,6 +10,7 @@ ARG NUMPY_VERSION=1.26.4
 ARG INSTALL_FLASH_ATTN=0
 ARG TRANSFORMERS_VERSION=4.57.3
 ARG ULTRALYTICS_VERSION=8.3.101
+ARG ULTRALYTICS_CLIP_REF=81ff68ed7ffcac3b40484c914f104f816757308d
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
 ARG ALL_PROXY=
@@ -89,6 +90,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       "qwen-vl-utils[decord]==0.0.8" \
       "ultralytics==${ULTRALYTICS_VERSION}" \
       hf_transfer
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install \
+      "git+https://github.com/ultralytics/CLIP.git@${ULTRALYTICS_CLIP_REF}"
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \

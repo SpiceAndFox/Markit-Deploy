@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -200,6 +201,12 @@ def require_cv_deps() -> None:
         raise SystemExit("Missing dependency: opencv-python. Install it or run inside the Docker image.")
     if np is None:
         raise SystemExit("Missing dependency: numpy. Install it or run inside the Docker image.")
+    if importlib.util.find_spec("clip") is None:
+        raise SystemExit(
+            "Missing dependency: clip. Rebuild the Docker image, or install the Ultralytics CLIP fork:\n"
+            "  python -m pip install "
+            "'git+https://github.com/ultralytics/CLIP.git@81ff68ed7ffcac3b40484c914f104f816757308d'"
+        )
 
 
 def set_text_prompts(model: Any, class_names: list[str]) -> None:
