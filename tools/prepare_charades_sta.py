@@ -5,6 +5,7 @@
 #     --video_root /data/Raw/Charades-Video \
 #     --output_json /data/MarkIt/test.json \
 #     --summary_json /data/MarkIt/test.summary.json \
+#     --nouns_json /data/MarkIt/nouns_qwen.json \
 #     --strict_videos
 #
 # Docker Compose example:
