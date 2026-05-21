@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # Usage:
 #   python tools/prepare_charades_sta.py \
-#     --input_txt /data/Charades-STA/raw/charades_sta_test.txt \
-#     --video_root /data/charades/videos \
-#     --output_json /data/charades/test.json \
-#     --summary_json /data/charades/test.summary.json \
+#     --input_txt /data/Raw/Charades-STA/raw/charades_sta_test.txt \
+#     --video_root /data/Raw/Charades-Video \
+#     --output_json /data/MarkIt/test.json \
+#     --summary_json /data/MarkIt/test.summary.json \
 #     --strict_videos
 #
 # Docker Compose example:
-#   MARKIT_DATA_VOLUME_MODE=rw docker compose run --rm markit bash -lc '
+#   docker compose run --rm markit bash -lc '
 #   python tools/prepare_charades_sta.py \
-#     --input_txt /data/Charades-STA/raw/charades_sta_test.txt \
+#     --input_txt /data/Raw/Charades-STA/charades_sta_test.txt \
 #     --video_root "$RAW_VIDEO_ROOT" \
 #     --output_json "$TEST_PATH" \
-#     --summary_json /data/charades/test.summary.json \
+#     --summary_json /data/MarkIt/test.summary.json \
 #     --strict_videos'
 #
 # Notes:

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Usage:
 #   python tools/generate_markit_overlays.py \
-#     --test_path /data/charades/test.json \
-#     --raw_video_root /data/charades/videos \
-#     --overlay_root /data/markit_overlay_videos \
+#     --test_path /data/MarkIt/test.json \
+#     --raw_video_root /data/Raw/Charades-Video \
+#     --overlay_root /data/MarkIt/Charades \
 #     --yoloe_weights /models/local/YOLOE-Large/yoloe-v8l-seg.pt \
 #     --device cuda:0
 #
 # Docker Compose smoke test:
-#   MARKIT_DATA_VOLUME_MODE=rw docker compose run --rm markit bash -lc '
+#   docker compose run --rm markit bash -lc '
 #   python tools/generate_markit_overlays.py \
 #     --test_path "$TEST_PATH" \
 #     --raw_video_root "$RAW_VIDEO_ROOT" \
@@ -16,12 +16,12 @@
 #     --yoloe_weights "$YOLOE_WEIGHTS_PATH" \
 #     --device cuda:0 \
 #     --max_records 5 \
-#     --summary_json /data/markit_overlay_videos/overlay_smoke.summary.json \
+#     --summary_json "$OVERLAY_ROOT/overlay_smoke.summary.json" \
 #     --overwrite'
 #
 # Output:
-#   Writes /data/markit_overlay_videos/<id>_overlay.mp4, which is consumed by
-#   eval/vlm_mr_markit.py. This script does not write .npz mask caches.
+#   Writes <overlay_root>/<id>_overlay.mp4 (i.e. /data/MarkIt/Charades/<id>_overlay.mp4),
+#   which is consumed by eval/vlm_mr_markit.py. This script does not write .npz mask caches.
 from __future__ import annotations
 
 import argparse
