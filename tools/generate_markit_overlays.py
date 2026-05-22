@@ -7,6 +7,7 @@
 #     --yoloe_weights /models/local/YOLOE-Large/yoloe-v8l-seg.pt \
 #     --mobileclip_weights /models/local/MobileCLIP/mobileclip_blt.pt \
 #     --device cuda:0 \
+#     --predict_source raw \
 #     --batch_size 32
 #
 # Docker Compose smoke test:
@@ -18,6 +19,7 @@
 #     --yoloe_weights "$YOLOE_WEIGHTS_PATH" \
 #     --mobileclip_weights "$MOBILECLIP_WEIGHTS_PATH" \
 #     --device cuda:0 \
+#     --predict_source raw \
 #     --batch_size 32 \
 #     --max_records 5 \
 #     --summary_json "$OVERLAY_ROOT/overlay_smoke.summary.json" \
@@ -326,42 +328,49 @@ def probe_video(cap: cv2.VideoCapture, video_path: Path) -> tuple[float, int, in
 
 def predict_and_write_batch(
     model: Any,
-    frames_bgr: list[np.ndarray],
+    predict_frames_bgr: list[np.ndarray],
+    render_frames_bgr: list[np.ndarray],
     writer: cv2.VideoWriter,
     args: argparse.Namespace,
     class_count: int,
 ) -> int:
-    if not frames_bgr:
+    if not predict_frames_bgr:
         return 0
+    if len(predict_frames_bgr) != len(render_frames_bgr):
+        raise RuntimeError(
+            f"Internal batching error: {len(predict_frames_bgr)} prediction frames "
+            f"for {len(render_frames_bgr)} render frames"
+        )
 
     results = model.predict(
-        frames_bgr,
+        predict_frames_bgr,
         imgsz=args.imgsz,
         conf=args.conf,
         iou=args.iou,
         device=args.device,
-        batch=len(frames_bgr),
+        batch=len(predict_frames_bgr),
+        retina_masks=bool(args.retina_masks),
         verbose=False,
     )
-    if len(results) != len(frames_bgr):
+    if len(results) != len(predict_frames_bgr):
         raise RuntimeError(
-            f"YOLOE returned {len(results)} results for {len(frames_bgr)} input frames"
+            f"YOLOE returned {len(results)} results for {len(predict_frames_bgr)} input frames"
         )
 
-    for frame_small, result in zip(frames_bgr, results):
+    for render_frame, result in zip(render_frames_bgr, results):
         label_map = build_label_map_from_result(
             result=result,
-            size=(frame_small.shape[1], frame_small.shape[0]),
+            size=(render_frame.shape[1], render_frame.shape[0]),
             max_nouns=class_count,
         )
         overlay_frame = render_overlay(
-            frame_bgr=frame_small,
+            frame_bgr=render_frame,
             label_map=label_map,
             alpha=args.mask_alpha,
             contour_width=args.contour_width,
         )
         writer.write(overlay_frame)
-    return len(frames_bgr)
+    return len(predict_frames_bgr)
 
 
 def generate_overlay_for_record(
@@ -409,7 +418,9 @@ def generate_overlay_for_record(
     written = 0
     frame_index = 0
     batch_size = max(1, int(args.batch_size))
-    batch_frames: list[np.ndarray] = []
+    predict_source = str(args.predict_source)
+    predict_frames: list[np.ndarray] = []
+    render_frames: list[np.ndarray] = []
     try:
         while True:
             ok, frame_bgr = cap.read()
@@ -421,21 +432,26 @@ def generate_overlay_for_record(
             if current_frame_index % frame_stride != 0:
                 continue
 
-            frame_small = cv2.resize(frame_bgr, (render_size, render_size), interpolation=cv2.INTER_LINEAR)
-            batch_frames.append(frame_small)
-            if len(batch_frames) >= batch_size:
+            render_frame = cv2.resize(frame_bgr, (render_size, render_size), interpolation=cv2.INTER_LINEAR)
+            predict_frame = frame_bgr if predict_source == "raw" else render_frame
+            predict_frames.append(predict_frame)
+            render_frames.append(render_frame)
+            if len(predict_frames) >= batch_size:
                 written += predict_and_write_batch(
                     model=model,
-                    frames_bgr=batch_frames,
+                    predict_frames_bgr=predict_frames,
+                    render_frames_bgr=render_frames,
                     writer=writer,
                     args=args,
                     class_count=len(class_names),
                 )
-                batch_frames = []
+                predict_frames = []
+                render_frames = []
 
         written += predict_and_write_batch(
             model=model,
-            frames_bgr=batch_frames,
+            predict_frames_bgr=predict_frames,
+            render_frames_bgr=render_frames,
             writer=writer,
             args=args,
             class_count=len(class_names),
@@ -459,6 +475,8 @@ def generate_overlay_for_record(
         "output_fps": output_fps,
         "output_frames": written,
         "batch_size": batch_size,
+        "predict_source": predict_source,
+        "retina_masks": bool(args.retina_masks),
     }
 
 
@@ -490,7 +508,7 @@ def main() -> None:
         help="Path to mobileclip_blt.pt used by YOLOE text prompts",
     )
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", type=int, default=640, help="YOLOE inference size; try 960 or 1280 for better masks")
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--iou", type=float, default=0.7)
     parser.add_argument("--render_size", type=int, default=336)
@@ -498,6 +516,25 @@ def main() -> None:
     parser.add_argument("--contour_width", type=int, default=3)
     parser.add_argument("--frame_stride", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=16, help="YOLOE frames per inference batch")
+    parser.add_argument(
+        "--predict_source",
+        choices=["raw", "render"],
+        default="raw",
+        help="Use raw frames for YOLOE mask prediction, or rendered frames for the old faster low-res path",
+    )
+    parser.add_argument(
+        "--retina_masks",
+        dest="retina_masks",
+        action="store_true",
+        default=True,
+        help="Ask Ultralytics for higher-resolution masks before rendering",
+    )
+    parser.add_argument(
+        "--no_retina_masks",
+        dest="retina_masks",
+        action="store_false",
+        help="Disable high-resolution mask output to reduce memory/time",
+    )
     parser.add_argument("--max_nouns", type=int, default=3)
     parser.add_argument("--max_records", type=int, default=-1)
     parser.add_argument("--start_index", type=int, default=0)
@@ -533,6 +570,8 @@ def main() -> None:
         "yoloe_weights": args.yoloe_weights,
         "batch_size": max(1, int(args.batch_size)),
         "frame_stride": max(1, int(args.frame_stride)),
+        "predict_source": args.predict_source,
+        "retina_masks": bool(args.retina_masks),
         "imgsz": args.imgsz,
         "num_records": len(records),
         "statuses": {},
