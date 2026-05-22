@@ -307,43 +307,46 @@ def draw_label_box(
     x_min: int,
     y_min: int,
     text: str,
-    color_bgr: tuple[int, int, int],
+    text_color_bgr: tuple[int, int, int],
+    outline_color_bgr: tuple[int, int, int],
     font_scale: float,
     thickness: int,
+    offset: int,
 ) -> None:
     height, width = frame_bgr.shape[:2]
     text = normalize_text(text)
     if not text:
         return
 
-    margin = max(2, int(round(height * 0.01)))
+    margin = max(1, int(offset))
     max_text_width = max(20, width - 2 * margin)
     scale = fit_text_scale(text, max_text_width, font_scale, thickness)
     text_size, baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
     text_w, text_h = text_size
 
-    box_w = text_w + 2 * margin
-    box_h = text_h + baseline + 2 * margin
-    box_x = min(max(x_min, margin), max(margin, width - box_w - margin))
-    box_y = y_min - box_h - margin
-    if box_y < margin:
-        box_y = min(max(y_min + margin, margin), max(margin, height - box_h - margin))
+    text_x = min(max(x_min + margin, margin), max(margin, width - text_w - margin))
+    text_y = y_min - margin
+    if text_y - text_h < margin:
+        text_y = y_min + text_h + margin
+    text_y = min(max(text_y, text_h + margin), max(text_h + margin, height - baseline - margin))
 
-    box_x2 = min(width - 1, box_x + box_w)
-    box_y2 = min(height - 1, box_y + box_h)
-    overlay = frame_bgr.copy()
-    cv2.rectangle(overlay, (box_x, box_y), (box_x2, box_y2), color_bgr, thickness=-1)
-    cv2.addWeighted(overlay, 0.75, frame_bgr, 0.25, 0, dst=frame_bgr)
-
-    text_x = box_x + margin
-    text_y = box_y + margin + text_h
     cv2.putText(
         frame_bgr,
         text,
         (text_x, text_y),
         cv2.FONT_HERSHEY_SIMPLEX,
         scale,
-        (255, 255, 255),
+        outline_color_bgr,
+        thickness + 2,
+        lineType=cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame_bgr,
+        text,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        text_color_bgr,
         thickness,
         lineType=cv2.LINE_AA,
     )
@@ -353,9 +356,11 @@ def draw_noun_labels(
     frame_bgr: np.ndarray,
     mask: np.ndarray,
     text: str,
-    color_bgr: tuple[int, int, int],
+    text_color_bgr: tuple[int, int, int],
+    outline_color_bgr: tuple[int, int, int],
     font_scale: float,
     thickness: int,
+    offset: int,
 ) -> None:
     mask_u8 = mask.astype(np.uint8)
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
@@ -371,9 +376,11 @@ def draw_noun_labels(
             x_min=int(x),
             y_min=int(y),
             text=text,
-            color_bgr=color_bgr,
+            text_color_bgr=text_color_bgr,
+            outline_color_bgr=outline_color_bgr,
             font_scale=font_scale,
             thickness=thickness,
+            offset=offset,
         )
         drew_any = True
 
@@ -386,9 +393,11 @@ def draw_noun_labels(
             x_min=int(xs.min()),
             y_min=int(ys.min()),
             text=text,
-            color_bgr=color_bgr,
+            text_color_bgr=text_color_bgr,
+            outline_color_bgr=outline_color_bgr,
             font_scale=font_scale,
             thickness=thickness,
+            offset=offset,
         )
 
 
@@ -400,6 +409,7 @@ def render_overlay(
     contour_width: int,
     text_scale: float,
     text_thickness: int,
+    text_offset: int,
 ) -> np.ndarray:
     rendered = frame_bgr.astype(np.float32).copy()
     for noun_id, color_bgr in COLOR_MAP_BGR.items():
@@ -430,9 +440,11 @@ def render_overlay(
             frame_bgr=rendered_u8,
             mask=mask,
             text=text,
-            color_bgr=color_bgr,
+            text_color_bgr=(0, 0, 0),
+            outline_color_bgr=(255, 255, 255),
             font_scale=text_scale,
             thickness=text_thickness,
+            offset=text_offset,
         )
     return rendered_u8
 
@@ -494,6 +506,7 @@ def predict_and_write_batch(
             contour_width=args.contour_width,
             text_scale=args.label_scale,
             text_thickness=max(1, int(args.label_thickness)),
+            text_offset=max(1, int(args.label_offset)),
         )
         writer.write(overlay_frame)
     return len(predict_frames_bgr)
@@ -640,6 +653,7 @@ def main() -> None:
     parser.add_argument("--contour_width", type=int, default=3)
     parser.add_argument("--label_scale", type=float, default=0.45, help="Noun label font scale")
     parser.add_argument("--label_thickness", type=int, default=1, help="Noun label text thickness")
+    parser.add_argument("--label_offset", type=int, default=4, help="Noun label offset from the mask bbox anchor")
     parser.add_argument("--frame_stride", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=16, help="YOLOE frames per inference batch")
     parser.add_argument(
@@ -694,6 +708,7 @@ def main() -> None:
         "imgsz": args.imgsz,
         "label_scale": args.label_scale,
         "label_thickness": args.label_thickness,
+        "label_offset": args.label_offset,
         "num_records": len(records),
         "statuses": {},
         "results": results,
