@@ -5,6 +5,7 @@
 #     --raw_video_root /data/Raw/Charades-Video \
 #     --overlay_root /data/MarkIt/Charades \
 #     --yoloe_weights /models/local/YOLOE-Large/yoloe-v8l-seg.pt \
+#     --mobileclip_weights /models/local/MobileCLIP/mobileclip_blt.pt \
 #     --device cuda:0
 #
 # Docker Compose smoke test:
@@ -14,6 +15,7 @@
 #     --raw_video_root "$RAW_VIDEO_ROOT" \
 #     --overlay_root "$OVERLAY_ROOT" \
 #     --yoloe_weights "$YOLOE_WEIGHTS_PATH" \
+#     --mobileclip_weights "$MOBILECLIP_WEIGHTS_PATH" \
 #     --device cuda:0 \
 #     --max_records 5 \
 #     --summary_json "$OVERLAY_ROOT/overlay_smoke.summary.json" \
@@ -201,11 +203,21 @@ def require_cv_deps() -> None:
         raise SystemExit("Missing dependency: opencv-python. Install it or run inside the Docker image.")
     if np is None:
         raise SystemExit("Missing dependency: numpy. Install it or run inside the Docker image.")
-    if importlib.util.find_spec("clip") is None:
+
+    missing = []
+    for module_name in ("clip", "open_clip", "timm", "mobileclip"):
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(module_name)
+
+    if missing:
         raise SystemExit(
-            "Missing dependency: clip. Rebuild the Docker image, or install the Ultralytics CLIP fork:\n"
+            "Missing YOLOE text-prompt dependencies: "
+            f"{', '.join(missing)}. Rebuild the Docker image, or install them with:\n"
             "  python -m pip install "
-            "'git+https://github.com/ultralytics/CLIP.git@81ff68ed7ffcac3b40484c914f104f816757308d'"
+            "open-clip-torch==2.24.0 timm==0.9.12 "
+            "'git+https://github.com/ultralytics/CLIP.git@81ff68ed7ffcac3b40484c914f104f816757308d' &&\n"
+            "  python -m pip install --no-deps "
+            "'git+https://github.com/apple/ml-mobileclip.git@aecfb5453d022e9deff12f81a150ea8f35194baa'"
         )
 
 
@@ -214,6 +226,26 @@ def set_text_prompts(model: Any, class_names: list[str]) -> None:
         return
     text_embeddings = model.get_text_pe(class_names)
     model.set_classes(class_names, text_embeddings)
+
+
+def ensure_mobileclip_weight(source_path: str, filename: str = "mobileclip_blt.pt") -> None:
+    local_path = Path.cwd() / filename
+    if local_path.exists():
+        return
+
+    source = Path(source_path)
+    if not source.exists():
+        raise FileNotFoundError(
+            f"Missing MobileCLIP weight: {source}. Download it with tools/download_models.py "
+            f"or place {filename} in the current working directory."
+        )
+
+    try:
+        local_path.symlink_to(source)
+    except OSError:
+        import shutil
+
+        shutil.copy2(source, local_path)
 
 
 def build_label_map_from_result(result: Any, size: tuple[int, int], max_nouns: int) -> np.ndarray:
@@ -394,6 +426,11 @@ def main() -> None:
         default="/models/local/YOLOE-Large/yoloe-v8l-seg.pt",
         help="Path to YOLOE segmentation weights",
     )
+    parser.add_argument(
+        "--mobileclip_weights",
+        default=os.environ.get("MOBILECLIP_WEIGHTS_PATH", "/models/local/MobileCLIP/mobileclip_blt.pt"),
+        help="Path to mobileclip_blt.pt used by YOLOE text prompts",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.25)
@@ -415,6 +452,7 @@ def main() -> None:
 
     if not Path(args.yoloe_weights).exists():
         raise FileNotFoundError(f"Missing YOLOE weights: {args.yoloe_weights}")
+    ensure_mobileclip_weight(args.mobileclip_weights)
 
     records = load_test_records(args.test_path)
     if args.start_index > 0:

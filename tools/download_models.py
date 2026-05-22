@@ -8,6 +8,7 @@ Default behavior:
   - Qwen models are downloaded from ModelScope.
   - YOLOE is downloaded from the Hugging Face-compatible endpoint configured
     by YOLOE_HF_ENDPOINT, for example https://hf-mirror.com.
+  - MobileCLIP text-prompt weights are downloaded from Apple's public URL.
 
 Hugging Face can still be used for all models:
   python tools/download_models.py --source huggingface --model-root /ckpts/markit/models
@@ -32,6 +33,11 @@ DEFAULT_MODELSCOPE_SUBJECT_LLM_REPO = "Qwen/Qwen2.5-7B-Instruct"
 DEFAULT_SUBJECT_LLM_DIR = "Qwen2.5-7B-Instruct"
 DEFAULT_HF_YOLOE_REPO = "jameslahm/yoloe"
 DEFAULT_YOLOE_WEIGHTS = "yoloe-v8l-seg.pt"
+DEFAULT_MOBILECLIP_WEIGHT = "mobileclip_blt.pt"
+DEFAULT_MOBILECLIP_WEIGHT_URL = (
+    "https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/"
+    f"{DEFAULT_MOBILECLIP_WEIGHT}"
+)
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -328,6 +334,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--mobileclip-weight",
+        default=None,
+        help=f"MobileCLIP weight filename used by YOLOE. Default: {DEFAULT_MOBILECLIP_WEIGHT}",
+    )
+    parser.add_argument(
+        "--mobileclip-weight-url",
+        default=None,
+        help="Direct URL for the MobileCLIP weight used by YOLOE text prompts.",
+    )
+    parser.add_argument(
         "--skip-subject-llm",
         action="store_true",
         help="Skip subject extractor download.",
@@ -336,6 +352,11 @@ def main() -> None:
         "--skip-yoloe",
         action="store_true",
         help="Skip YOLOE weight download.",
+    )
+    parser.add_argument(
+        "--skip-mobileclip",
+        action="store_true",
+        help="Skip MobileCLIP weight download.",
     )
     args = parser.parse_args()
 
@@ -394,8 +415,17 @@ def main() -> None:
     yoloe_hf_endpoint = (
         args.yoloe_hf_endpoint or os.environ.get("YOLOE_HF_ENDPOINT", "")
     ).strip()
+    mobileclip_weight = (
+        args.mobileclip_weight
+        or env_or_default("MOBILECLIP_WEIGHT", DEFAULT_MOBILECLIP_WEIGHT)
+    ).strip()
+    mobileclip_weight_url = (
+        args.mobileclip_weight_url
+        or env_or_default("MOBILECLIP_WEIGHT_URL", DEFAULT_MOBILECLIP_WEIGHT_URL)
+    ).strip()
     skip_subject_llm = args.skip_subject_llm or env_flag("SKIP_SUBJECT_LLM")
     skip_yoloe = args.skip_yoloe or env_flag("SKIP_YOLOE")
+    skip_mobileclip = args.skip_mobileclip or env_flag("SKIP_MOBILECLIP")
 
     records: list[dict[str, str]] = []
 
@@ -467,6 +497,25 @@ def main() -> None:
             "[skip] YOLOE: no domestic repo configured. Set MODELSCOPE_YOLOE_REPO, "
             "set YOLOE_URLS, set YOLOE_HF_ENDPOINT, or pass --skip-yoloe."
         )
+
+    if skip_mobileclip:
+        print("[skip] MobileCLIP")
+    else:
+        print(f"[download] {mobileclip_weight_url}")
+        mobileclip_records = download_url_files(
+            urls=[mobileclip_weight_url],
+            local_dir=model_root / "MobileCLIP",
+        )
+        downloaded_path = Path(mobileclip_records[0]["path"])
+        expected_path = downloaded_path.parent / mobileclip_weight
+        if downloaded_path.name != mobileclip_weight:
+            if expected_path.exists() and expected_path.stat().st_size > 0:
+                print(f"[cached] {expected_path}")
+            else:
+                shutil.copy2(downloaded_path, expected_path)
+            mobileclip_records[0]["filename"] = mobileclip_weight
+            mobileclip_records[0]["path"] = str(expected_path.resolve())
+        records.extend(mobileclip_records)
 
     write_manifest(model_root, records)
 

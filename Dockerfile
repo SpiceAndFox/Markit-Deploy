@@ -13,6 +13,9 @@ ARG TIKTOKEN_VERSION=0.13.0
 ARG TRANSFORMERS_STREAM_GENERATOR_VERSION=0.0.5
 ARG ULTRALYTICS_VERSION=8.3.101
 ARG ULTRALYTICS_CLIP_REF=81ff68ed7ffcac3b40484c914f104f816757308d
+ARG OPEN_CLIP_TORCH_VERSION=2.24.0
+ARG TIMM_VERSION=0.9.12
+ARG MOBILECLIP_REF=aecfb5453d022e9deff12f81a150ea8f35194baa
 ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
 ARG ALL_PROXY=
@@ -93,11 +96,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       "tiktoken==${TIKTOKEN_VERSION}" \
       "transformers-stream-generator==${TRANSFORMERS_STREAM_GENERATOR_VERSION}" \
       "ultralytics==${ULTRALYTICS_VERSION}" \
+      "open-clip-torch==${OPEN_CLIP_TORCH_VERSION}" \
+      "timm==${TIMM_VERSION}" \
       hf_transfer
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \
       "git+https://github.com/ultralytics/CLIP.git@${ULTRALYTICS_CLIP_REF}"
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --no-deps \
+      "git+https://github.com/apple/ml-mobileclip.git@${MOBILECLIP_REF}"
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \

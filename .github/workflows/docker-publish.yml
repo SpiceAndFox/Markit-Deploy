@@ -53,6 +53,21 @@ on:
         required: false
         type: string
         default: 81ff68ed7ffcac3b40484c914f104f816757308d
+      open_clip_torch_version:
+        description: open-clip-torch version used by YOLOE MobileCLIP text prompts
+        required: false
+        type: string
+        default: 2.24.0
+      timm_version:
+        description: timm version used by YOLOE MobileCLIP text prompts
+        required: false
+        type: string
+        default: 0.9.12
+      mobileclip_ref:
+        description: Git ref for Apple's ml-mobileclip dependency used by YOLOE text prompts
+        required: false
+        type: string
+        default: aecfb5453d022e9deff12f81a150ea8f35194baa
       install_flash_attn:
         description: Install flash-attn during image build
         required: true
@@ -151,6 +166,9 @@ jobs:
             TRANSFORMERS_STREAM_GENERATOR_VERSION=${{ inputs.transformers_stream_generator_version || vars.TRANSFORMERS_STREAM_GENERATOR_VERSION || '0.0.5' }}
             ULTRALYTICS_VERSION=${{ inputs.ultralytics_version || vars.ULTRALYTICS_VERSION || '8.3.101' }}
             ULTRALYTICS_CLIP_REF=${{ inputs.ultralytics_clip_ref || vars.ULTRALYTICS_CLIP_REF || '81ff68ed7ffcac3b40484c914f104f816757308d' }}
+            OPEN_CLIP_TORCH_VERSION=${{ inputs.open_clip_torch_version || vars.OPEN_CLIP_TORCH_VERSION || '2.24.0' }}
+            TIMM_VERSION=${{ inputs.timm_version || vars.TIMM_VERSION || '0.9.12' }}
+            MOBILECLIP_REF=${{ inputs.mobileclip_ref || vars.MOBILECLIP_REF || 'aecfb5453d022e9deff12f81a150ea8f35194baa' }}
             NUMPY_VERSION=${{ vars.NUMPY_VERSION || '1.26.4' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
