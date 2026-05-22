@@ -2,14 +2,14 @@
 # Usage:
 #   python tools/extract_nouns_qwen.py \
 #     --input_txt /data/Raw/Charades-STA/raw/charades_sta_test.txt \
-#     --model_path /models/local/Qwen-7B-Chat \
+#     --model_path /models/local/Qwen2.5-7B-Instruct \
 #     --output_json /data/MarkIt/nouns_qwen.json
 #
 # Docker Compose example:
 #   docker compose run --rm markit bash -lc '
 #   python tools/extract_nouns_qwen.py \
 #     --input_txt /data/Raw/Charades-STA/charades_sta_test.txt \
-#     --model_path /models/local/Qwen-7B-Chat \
+#     --model_path "${SUBJECT_LLM_MODEL_PATH:-/models/local/Qwen2.5-7B-Instruct}" \
 #     --output_json /data/MarkIt/nouns_qwen.json'
 #
 # Output:
@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 from collections import defaultdict
@@ -66,7 +67,7 @@ def parse_charades_sta_line(line: str, line_number: int) -> dict[str, Any] | Non
 
 def load_charades_sta(path: Path) -> list[dict[str, Any]]:
     records = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").readlines(), start=1):
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         item = parse_charades_sta_line(line, line_number)
         if item is not None:
             records.append(item)
@@ -193,6 +194,49 @@ def resolve_torch_dtype(torch_module: Any, device: str):
     return torch_module.float32 if str(device).strip().lower() == "cpu" else torch_module.bfloat16
 
 
+def patch_transformers_stream_generator_compat() -> None:
+    """Expose legacy generation symbols expected by Qwen-7B-Chat remote code."""
+    import transformers
+
+    candidate_modules = [
+        "transformers.generation",
+        "transformers.generation.utils",
+        "transformers.generation.beam_search",
+        "transformers.generation.beam_constraints",
+        "transformers.generation.logits_process",
+        "transformers.generation.stopping_criteria",
+        "transformers.modeling_utils",
+    ]
+    symbol_names = [
+        "BeamScorer",
+        "BeamSearchScorer",
+        "ConstrainedBeamSearchScorer",
+        "Constraint",
+        "DisjunctiveConstraint",
+        "GenerationConfig",
+        "GenerationMixin",
+        "LogitsProcessor",
+        "LogitsProcessorList",
+        "MaxLengthCriteria",
+        "PreTrainedModel",
+        "PhrasalConstraint",
+        "StoppingCriteria",
+        "StoppingCriteriaList",
+    ]
+
+    for name in symbol_names:
+        if hasattr(transformers, name):
+            continue
+        for module_name in candidate_modules:
+            try:
+                module = importlib.import_module(module_name)
+            except Exception:
+                continue
+            if hasattr(module, name):
+                setattr(transformers, name, getattr(module, name))
+                break
+
+
 def main() -> None:
     try:
         import torch
@@ -203,10 +247,10 @@ def main() -> None:
         ) from exc
 
     parser = argparse.ArgumentParser(
-        description="Extract nouns from Charades-STA queries using Qwen-7B-Chat."
+        description="Extract nouns from Charades-STA queries using a Qwen text model."
     )
     parser.add_argument("--input_txt", required=True, help="Path to charades_sta_test.txt")
-    parser.add_argument("--model_path", required=True, help="Path to Qwen-7B-Chat model directory")
+    parser.add_argument("--model_path", required=True, help="Path to Qwen text model directory")
     parser.add_argument("--output_json", required=True, help="Output JSON mapping record_id -> nouns")
     parser.add_argument("--max_nouns", type=int, default=3)
     parser.add_argument("--max_new_tokens", type=int, default=64)
@@ -228,7 +272,8 @@ def main() -> None:
     if nouns_map:
         print(f"Loaded {len(nouns_map)} existing records from {output_path}")
 
-    print(f"Loading Qwen-7B-Chat from {args.model_path} ...")
+    print(f"Loading Qwen text model from {args.model_path} ...")
+    patch_transformers_stream_generator_compat()
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,

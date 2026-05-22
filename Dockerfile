@@ -9,6 +9,8 @@ ARG TORCHVISION_VERSION=0.21.0
 ARG NUMPY_VERSION=1.26.4
 ARG INSTALL_FLASH_ATTN=0
 ARG TRANSFORMERS_VERSION=4.57.3
+ARG TIKTOKEN_VERSION=0.13.0
+ARG TRANSFORMERS_STREAM_GENERATOR_VERSION=0.0.5
 ARG ULTRALYTICS_VERSION=8.3.101
 ARG ULTRALYTICS_CLIP_REF=81ff68ed7ffcac3b40484c914f104f816757308d
 ARG HTTP_PROXY=
@@ -88,6 +90,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install \
       av==13.1.0 \
       "qwen-vl-utils[decord]==0.0.8" \
+      "tiktoken==${TIKTOKEN_VERSION}" \
+      "transformers-stream-generator==${TRANSFORMERS_STREAM_GENERATOR_VERSION}" \
       "ultralytics==${ULTRALYTICS_VERSION}" \
       hf_transfer
 

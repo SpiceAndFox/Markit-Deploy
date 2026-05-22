@@ -27,8 +27,9 @@ from urllib.request import Request, urlopen
 
 DEFAULT_MODEL_SOURCE = "modelscope"
 DEFAULT_QWEN25_VL_REPO = "Qwen/Qwen2.5-VL-7B-Instruct"
-DEFAULT_SUBJECT_LLM_REPO = "Qwen/Qwen-7B-Chat"
-DEFAULT_MODELSCOPE_SUBJECT_LLM_REPO = "Qwen/Qwen-7b-chat"
+DEFAULT_SUBJECT_LLM_REPO = "Qwen/Qwen2.5-7B-Instruct"
+DEFAULT_MODELSCOPE_SUBJECT_LLM_REPO = "Qwen/Qwen2.5-7B-Instruct"
+DEFAULT_SUBJECT_LLM_DIR = "Qwen2.5-7B-Instruct"
 DEFAULT_HF_YOLOE_REPO = "jameslahm/yoloe"
 DEFAULT_YOLOE_WEIGHTS = "yoloe-v8l-seg.pt"
 
@@ -296,6 +297,11 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--subject-llm-dir",
+        default=None,
+        help=f"Local directory name for the subject extractor. Default: {DEFAULT_SUBJECT_LLM_DIR}",
+    )
+    parser.add_argument(
         "--yoloe-repo",
         default=None,
         help=(
@@ -324,7 +330,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-subject-llm",
         action="store_true",
-        help="Skip Qwen-7B subject extractor download.",
+        help="Skip subject extractor download.",
     )
     parser.add_argument(
         "--skip-yoloe",
@@ -369,6 +375,10 @@ def main() -> None:
             else DEFAULT_SUBJECT_LLM_REPO
         ),
     )
+    subject_llm_dir = (
+        args.subject_llm_dir
+        or env_or_default("SUBJECT_LLM_DIR", DEFAULT_SUBJECT_LLM_DIR)
+    ).strip()
     hf_yoloe_repo = args.yoloe_repo or env_or_default(
         "YOLOE_REPO", DEFAULT_HF_YOLOE_REPO
     )
@@ -408,7 +418,7 @@ def main() -> None:
                 source=source,
                 snapshot_download=snapshot_download,
                 repo_id=subject_llm_repo,
-                local_dir=model_root / "Qwen-7B-Chat",
+                local_dir=model_root / subject_llm_dir,
                 token=token,
             )
         )

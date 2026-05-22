@@ -33,6 +33,16 @@ on:
         required: false
         type: string
         default: 4.57.3
+      tiktoken_version:
+        description: tiktoken PyPI version used by Qwen-7B-Chat tokenizer
+        required: false
+        type: string
+        default: 0.13.0
+      transformers_stream_generator_version:
+        description: transformers-stream-generator PyPI version used by Qwen-7B-Chat remote code
+        required: false
+        type: string
+        default: 0.0.5
       ultralytics_version:
         description: Ultralytics version used for YOLOE overlay generation
         required: false
@@ -137,6 +147,8 @@ jobs:
             TORCHVISION_VERSION=${{ inputs.torchvision_version || vars.TORCHVISION_VERSION || '0.21.0' }}
             INSTALL_FLASH_ATTN=${{ inputs.install_flash_attn || vars.INSTALL_FLASH_ATTN || '0' }}
             TRANSFORMERS_VERSION=${{ inputs.transformers_version || vars.TRANSFORMERS_VERSION || '4.57.3' }}
+            TIKTOKEN_VERSION=${{ inputs.tiktoken_version || vars.TIKTOKEN_VERSION || '0.13.0' }}
+            TRANSFORMERS_STREAM_GENERATOR_VERSION=${{ inputs.transformers_stream_generator_version || vars.TRANSFORMERS_STREAM_GENERATOR_VERSION || '0.0.5' }}
             ULTRALYTICS_VERSION=${{ inputs.ultralytics_version || vars.ULTRALYTICS_VERSION || '8.3.101' }}
             ULTRALYTICS_CLIP_REF=${{ inputs.ultralytics_clip_ref || vars.ULTRALYTICS_CLIP_REF || '81ff68ed7ffcac3b40484c914f104f816757308d' }}
             NUMPY_VERSION=${{ vars.NUMPY_VERSION || '1.26.4' }}
