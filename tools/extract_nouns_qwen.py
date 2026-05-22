@@ -283,6 +283,7 @@ def main() -> None:
         low_cpu_mem_usage=True,
     ).eval()
 
+    tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
