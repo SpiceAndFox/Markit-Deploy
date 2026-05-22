@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Usage:
 #   python tools/extract_nouns_qwen.py \
-#     --input_txt /data/Raw/Charades-STA/charades_sta_test.txt \
+#     --input_txt /data/Raw/Charades-STA/raw/charades_sta_test.txt \
 #     --model_path /models/local/Qwen-7B-Chat \
 #     --output_json /data/MarkIt/nouns_qwen.json
 #
