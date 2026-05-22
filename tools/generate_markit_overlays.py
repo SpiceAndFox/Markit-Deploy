@@ -291,7 +291,116 @@ def build_label_map_from_result(result: Any, size: tuple[int, int], max_nouns: i
     return label_map
 
 
-def render_overlay(frame_bgr: np.ndarray, label_map: np.ndarray, alpha: float, contour_width: int) -> np.ndarray:
+def fit_text_scale(text: str, max_width: int, base_scale: float, thickness: int) -> float:
+    scale = float(base_scale)
+    min_scale = 0.35
+    while scale > min_scale:
+        text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        if text_size[0] <= max_width:
+            return scale
+        scale *= 0.9
+    return min_scale
+
+
+def draw_label_box(
+    frame_bgr: np.ndarray,
+    x_min: int,
+    y_min: int,
+    text: str,
+    color_bgr: tuple[int, int, int],
+    font_scale: float,
+    thickness: int,
+) -> None:
+    height, width = frame_bgr.shape[:2]
+    text = normalize_text(text)
+    if not text:
+        return
+
+    margin = max(2, int(round(height * 0.01)))
+    max_text_width = max(20, width - 2 * margin)
+    scale = fit_text_scale(text, max_text_width, font_scale, thickness)
+    text_size, baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    text_w, text_h = text_size
+
+    box_w = text_w + 2 * margin
+    box_h = text_h + baseline + 2 * margin
+    box_x = min(max(x_min, margin), max(margin, width - box_w - margin))
+    box_y = y_min - box_h - margin
+    if box_y < margin:
+        box_y = min(max(y_min + margin, margin), max(margin, height - box_h - margin))
+
+    box_x2 = min(width - 1, box_x + box_w)
+    box_y2 = min(height - 1, box_y + box_h)
+    overlay = frame_bgr.copy()
+    cv2.rectangle(overlay, (box_x, box_y), (box_x2, box_y2), color_bgr, thickness=-1)
+    cv2.addWeighted(overlay, 0.75, frame_bgr, 0.25, 0, dst=frame_bgr)
+
+    text_x = box_x + margin
+    text_y = box_y + margin + text_h
+    cv2.putText(
+        frame_bgr,
+        text,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        (255, 255, 255),
+        thickness,
+        lineType=cv2.LINE_AA,
+    )
+
+
+def draw_noun_labels(
+    frame_bgr: np.ndarray,
+    mask: np.ndarray,
+    text: str,
+    color_bgr: tuple[int, int, int],
+    font_scale: float,
+    thickness: int,
+) -> None:
+    mask_u8 = mask.astype(np.uint8)
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
+    min_area = max(8, int(round(frame_bgr.shape[0] * frame_bgr.shape[1] * 0.001)))
+
+    drew_any = False
+    for component_id in range(1, num_labels):
+        x, y, width, height, area = stats[component_id]
+        if area < min_area:
+            continue
+        draw_label_box(
+            frame_bgr=frame_bgr,
+            x_min=int(x),
+            y_min=int(y),
+            text=text,
+            color_bgr=color_bgr,
+            font_scale=font_scale,
+            thickness=thickness,
+        )
+        drew_any = True
+
+    if not drew_any:
+        ys, xs = np.where(mask)
+        if len(xs) == 0 or len(ys) == 0:
+            return
+        draw_label_box(
+            frame_bgr=frame_bgr,
+            x_min=int(xs.min()),
+            y_min=int(ys.min()),
+            text=text,
+            color_bgr=color_bgr,
+            font_scale=font_scale,
+            thickness=thickness,
+        )
+
+
+def render_overlay(
+    frame_bgr: np.ndarray,
+    label_map: np.ndarray,
+    nouns_by_id: dict[int, str],
+    alpha: float,
+    contour_width: int,
+    text_scale: float,
+    text_thickness: int,
+) -> np.ndarray:
     rendered = frame_bgr.astype(np.float32).copy()
     for noun_id, color_bgr in COLOR_MAP_BGR.items():
         mask = label_map == noun_id
@@ -309,6 +418,22 @@ def render_overlay(frame_bgr: np.ndarray, label_map: np.ndarray, alpha: float, c
                 continue
             contours, _ = cv2.findContours(mask * 255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(rendered_u8, contours, -1, color_bgr, contour_width)
+
+    for noun_id, text in sorted(nouns_by_id.items()):
+        color_bgr = COLOR_MAP_BGR.get(noun_id)
+        if color_bgr is None:
+            continue
+        mask = label_map == noun_id
+        if not np.any(mask):
+            continue
+        draw_noun_labels(
+            frame_bgr=rendered_u8,
+            mask=mask,
+            text=text,
+            color_bgr=color_bgr,
+            font_scale=text_scale,
+            thickness=text_thickness,
+        )
     return rendered_u8
 
 
@@ -330,7 +455,7 @@ def predict_and_write_batch(
     render_frames_bgr: list[np.ndarray],
     writer: cv2.VideoWriter,
     args: argparse.Namespace,
-    class_count: int,
+    nouns_by_id: dict[int, str],
 ) -> int:
     if not predict_frames_bgr:
         return 0
@@ -359,13 +484,16 @@ def predict_and_write_batch(
         label_map = build_label_map_from_result(
             result=result,
             size=(render_frame.shape[1], render_frame.shape[0]),
-            max_nouns=class_count,
+            max_nouns=len(nouns_by_id),
         )
         overlay_frame = render_overlay(
             frame_bgr=render_frame,
             label_map=label_map,
+            nouns_by_id=nouns_by_id,
             alpha=args.mask_alpha,
             contour_width=args.contour_width,
+            text_scale=args.label_scale,
+            text_thickness=max(1, int(args.label_thickness)),
         )
         writer.write(overlay_frame)
     return len(predict_frames_bgr)
@@ -382,6 +510,7 @@ def generate_overlay_for_record(
         return {"id": record["id"], "status": "skipped_no_nouns"}
 
     class_names = [noun for _, noun in nouns]
+    nouns_by_id = {idx: noun for idx, noun in nouns}
     set_text_prompts(model, class_names, text_pe_cache)
 
     raw_video_path = Path(args.raw_video_root) / record["video"]
@@ -439,7 +568,7 @@ def generate_overlay_for_record(
                     render_frames_bgr=render_frames,
                     writer=writer,
                     args=args,
-                    class_count=len(class_names),
+                    nouns_by_id=nouns_by_id,
                 )
                 predict_frames = []
                 render_frames = []
@@ -450,7 +579,7 @@ def generate_overlay_for_record(
             render_frames_bgr=render_frames,
             writer=writer,
             args=args,
-            class_count=len(class_names),
+            nouns_by_id=nouns_by_id,
         )
     finally:
         cap.release()
@@ -509,6 +638,8 @@ def main() -> None:
     parser.add_argument("--render_size", type=int, default=336)
     parser.add_argument("--mask_alpha", type=float, default=0.3)
     parser.add_argument("--contour_width", type=int, default=3)
+    parser.add_argument("--label_scale", type=float, default=0.45, help="Noun label font scale")
+    parser.add_argument("--label_thickness", type=int, default=1, help="Noun label text thickness")
     parser.add_argument("--frame_stride", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=16, help="YOLOE frames per inference batch")
     parser.add_argument(
@@ -561,6 +692,8 @@ def main() -> None:
         "frame_stride": max(1, int(args.frame_stride)),
         "retina_masks": bool(args.retina_masks),
         "imgsz": args.imgsz,
+        "label_scale": args.label_scale,
+        "label_thickness": args.label_thickness,
         "num_records": len(records),
         "statuses": {},
         "results": results,
