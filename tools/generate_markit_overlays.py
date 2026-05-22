@@ -6,7 +6,8 @@
 #     --overlay_root /data/MarkIt/Charades \
 #     --yoloe_weights /models/local/YOLOE-Large/yoloe-v8l-seg.pt \
 #     --mobileclip_weights /models/local/MobileCLIP/mobileclip_blt.pt \
-#     --device cuda:0
+#     --device cuda:0 \
+#     --batch_size 32
 #
 # Docker Compose smoke test:
 #   docker compose run --rm markit bash -lc '
@@ -17,6 +18,7 @@
 #     --yoloe_weights "$YOLOE_WEIGHTS_PATH" \
 #     --mobileclip_weights "$MOBILECLIP_WEIGHTS_PATH" \
 #     --device cuda:0 \
+#     --batch_size 32 \
 #     --max_records 5 \
 #     --summary_json "$OVERLAY_ROOT/overlay_smoke.summary.json" \
 #     --overwrite'
@@ -221,10 +223,20 @@ def require_cv_deps() -> None:
         )
 
 
-def set_text_prompts(model: Any, class_names: list[str]) -> None:
+def set_text_prompts(
+    model: Any,
+    class_names: list[str],
+    text_pe_cache: dict[tuple[str, ...], Any] | None = None,
+) -> None:
     if not class_names:
         return
-    text_embeddings = model.get_text_pe(class_names)
+    cache_key = tuple(class_names)
+    if text_pe_cache is not None and cache_key in text_pe_cache:
+        text_embeddings = text_pe_cache[cache_key]
+    else:
+        text_embeddings = model.get_text_pe(class_names)
+        if text_pe_cache is not None:
+            text_pe_cache[cache_key] = text_embeddings
     model.set_classes(class_names, text_embeddings)
 
 
@@ -312,13 +324,58 @@ def probe_video(cap: cv2.VideoCapture, video_path: Path) -> tuple[float, int, in
     return fps, total_frames, width, height
 
 
-def generate_overlay_for_record(model: Any, record: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+def predict_and_write_batch(
+    model: Any,
+    frames_bgr: list[np.ndarray],
+    writer: cv2.VideoWriter,
+    args: argparse.Namespace,
+    class_count: int,
+) -> int:
+    if not frames_bgr:
+        return 0
+
+    results = model.predict(
+        frames_bgr,
+        imgsz=args.imgsz,
+        conf=args.conf,
+        iou=args.iou,
+        device=args.device,
+        batch=len(frames_bgr),
+        verbose=False,
+    )
+    if len(results) != len(frames_bgr):
+        raise RuntimeError(
+            f"YOLOE returned {len(results)} results for {len(frames_bgr)} input frames"
+        )
+
+    for frame_small, result in zip(frames_bgr, results):
+        label_map = build_label_map_from_result(
+            result=result,
+            size=(frame_small.shape[1], frame_small.shape[0]),
+            max_nouns=class_count,
+        )
+        overlay_frame = render_overlay(
+            frame_bgr=frame_small,
+            label_map=label_map,
+            alpha=args.mask_alpha,
+            contour_width=args.contour_width,
+        )
+        writer.write(overlay_frame)
+    return len(frames_bgr)
+
+
+def generate_overlay_for_record(
+    model: Any,
+    record: dict[str, Any],
+    args: argparse.Namespace,
+    text_pe_cache: dict[tuple[str, ...], Any] | None = None,
+) -> dict[str, Any]:
     nouns = sorted_nouns(record.get("nouns", {}), args.max_nouns)
     if not nouns:
         return {"id": record["id"], "status": "skipped_no_nouns"}
 
     class_names = [noun for _, noun in nouns]
-    set_text_prompts(model, class_names)
+    set_text_prompts(model, class_names, text_pe_cache)
 
     raw_video_path = Path(args.raw_video_root) / record["video"]
     if not raw_video_path.exists():
@@ -351,38 +408,38 @@ def generate_overlay_for_record(model: Any, record: dict[str, Any], args: argpar
 
     written = 0
     frame_index = 0
+    batch_size = max(1, int(args.batch_size))
+    batch_frames: list[np.ndarray] = []
     try:
         while True:
             ok, frame_bgr = cap.read()
             if not ok:
                 break
-            if frame_index % frame_stride != 0:
-                frame_index += 1
+            current_frame_index = frame_index
+            frame_index += 1
+
+            if current_frame_index % frame_stride != 0:
                 continue
 
             frame_small = cv2.resize(frame_bgr, (render_size, render_size), interpolation=cv2.INTER_LINEAR)
-            result = model.predict(
-                frame_small,
-                imgsz=args.imgsz,
-                conf=args.conf,
-                iou=args.iou,
-                device=args.device,
-                verbose=False,
-            )[0]
-            label_map = build_label_map_from_result(
-                result=result,
-                size=(render_size, render_size),
-                max_nouns=len(class_names),
-            )
-            overlay_frame = render_overlay(
-                frame_bgr=frame_small,
-                label_map=label_map,
-                alpha=args.mask_alpha,
-                contour_width=args.contour_width,
-            )
-            writer.write(overlay_frame)
-            written += 1
-            frame_index += 1
+            batch_frames.append(frame_small)
+            if len(batch_frames) >= batch_size:
+                written += predict_and_write_batch(
+                    model=model,
+                    frames_bgr=batch_frames,
+                    writer=writer,
+                    args=args,
+                    class_count=len(class_names),
+                )
+                batch_frames = []
+
+        written += predict_and_write_batch(
+            model=model,
+            frames_bgr=batch_frames,
+            writer=writer,
+            args=args,
+            class_count=len(class_names),
+        )
     finally:
         cap.release()
         writer.release()
@@ -401,6 +458,7 @@ def generate_overlay_for_record(model: Any, record: dict[str, Any], args: argpar
         "source_frames": total_frames,
         "output_fps": output_fps,
         "output_frames": written,
+        "batch_size": batch_size,
     }
 
 
@@ -439,6 +497,7 @@ def main() -> None:
     parser.add_argument("--mask_alpha", type=float, default=0.3)
     parser.add_argument("--contour_width", type=int, default=3)
     parser.add_argument("--frame_stride", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=16, help="YOLOE frames per inference batch")
     parser.add_argument("--max_nouns", type=int, default=3)
     parser.add_argument("--max_records", type=int, default=-1)
     parser.add_argument("--start_index", type=int, default=0)
@@ -461,9 +520,10 @@ def main() -> None:
         records = records[: args.max_records]
 
     model = load_yoloe(args.yoloe_weights, args.device)
+    text_pe_cache: dict[tuple[str, ...], Any] = {}
     results = []
     for record in tqdm(records, desc="overlays"):
-        result = generate_overlay_for_record(model, record, args)
+        result = generate_overlay_for_record(model, record, args, text_pe_cache)
         results.append(result)
 
     summary = {
@@ -471,6 +531,9 @@ def main() -> None:
         "raw_video_root": args.raw_video_root,
         "overlay_root": args.overlay_root,
         "yoloe_weights": args.yoloe_weights,
+        "batch_size": max(1, int(args.batch_size)),
+        "frame_stride": max(1, int(args.frame_stride)),
+        "imgsz": args.imgsz,
         "num_records": len(records),
         "statuses": {},
         "results": results,
