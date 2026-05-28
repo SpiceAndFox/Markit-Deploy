@@ -79,7 +79,7 @@ def coerce_float(value: Any) -> float:
     return float(value)
 
 
-def flatten_grouped_video_dataset(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def flatten_grouped_video_dataset(payload: dict[str, Any], video_ext: str = ".mp4") -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for video_id, sample in payload.items():
         if not isinstance(sample, dict):
@@ -108,7 +108,7 @@ def flatten_grouped_video_dataset(payload: dict[str, Any]) -> list[dict[str, Any
             records.append(
                 {
                     "id": f"{Path(str(video_id)).stem}_{idx}",
-                    "video": ensure_video_name(str(video_id)),
+                    "video": ensure_video_name(str(video_id), video_ext),
                     "query": normalize_text(query),
                     "start_time": coerce_float(timestamp[0]),
                     "end_time": coerce_float(timestamp[1]),
@@ -119,7 +119,7 @@ def flatten_grouped_video_dataset(payload: dict[str, Any]) -> list[dict[str, Any
     return records
 
 
-def flatten_list_video_dataset(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def flatten_list_video_dataset(payload: list[dict[str, Any]], video_ext: str = ".mp4") -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for idx, sample in enumerate(payload, start=1):
         query = sample.get("query", sample.get("sentence"))
@@ -147,7 +147,7 @@ def flatten_list_video_dataset(payload: list[dict[str, Any]]) -> list[dict[str, 
         records.append(
             {
                 "id": str(record_id),
-                "video": ensure_video_name(str(video_name)),
+                "video": ensure_video_name(str(video_name), video_ext),
                 "query": normalize_text(query),
                 "start_time": coerce_float(start_time),
                 "end_time": coerce_float(end_time),
@@ -158,13 +158,13 @@ def flatten_list_video_dataset(payload: list[dict[str, Any]]) -> list[dict[str, 
     return records
 
 
-def load_test_records(test_path: str) -> list[dict[str, Any]]:
+def load_test_records(test_path: str, video_ext: str = ".mp4") -> list[dict[str, Any]]:
     with open(test_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if isinstance(payload, list):
-        return flatten_list_video_dataset(payload)
+        return flatten_list_video_dataset(payload, video_ext)
     if isinstance(payload, dict):
-        return flatten_grouped_video_dataset(payload)
+        return flatten_grouped_video_dataset(payload, video_ext)
     raise TypeError(f"Unsupported test JSON root type: {type(payload).__name__}")
 
 
@@ -676,6 +676,7 @@ def main() -> None:
     parser.add_argument("--skip_missing", action="store_true")
     parser.add_argument("--codec", default="mp4v")
     parser.add_argument("--summary_json", help="Optional generation summary JSON")
+    parser.add_argument("--video_ext", default=".mp4", help="Video file extension, default: .mp4")
     args = parser.parse_args()
 
     require_cv_deps()
@@ -684,7 +685,7 @@ def main() -> None:
         raise FileNotFoundError(f"Missing YOLOE weights: {args.yoloe_weights}")
     ensure_mobileclip_weight(args.mobileclip_weights)
 
-    records = load_test_records(args.test_path)
+    records = load_test_records(args.test_path, args.video_ext)
     if args.start_index > 0:
         records = records[args.start_index :]
     if args.max_records > 0:

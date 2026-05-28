@@ -60,7 +60,7 @@ def coerce_float(value) -> float:
     return float(value)
 
 
-def flatten_grouped_video_dataset(payload: dict) -> list[dict]:
+def flatten_grouped_video_dataset(payload: dict, video_ext: str = ".mp4") -> list[dict]:
     records = []
     for video_id, sample in payload.items():
         sentences = sample.get("sentences")
@@ -90,7 +90,7 @@ def flatten_grouped_video_dataset(payload: dict) -> list[dict]:
             records.append(
                 {
                     "id": f"{Path(str(video_id)).stem}_{idx}",
-                    "video": ensure_video_name(video_id),
+                    "video": ensure_video_name(video_id, video_ext),
                     "start_time": coerce_float(start_time),
                     "end_time": coerce_float(end_time),
                     "query": normalize_text(query),
@@ -101,7 +101,7 @@ def flatten_grouped_video_dataset(payload: dict) -> list[dict]:
     return records
 
 
-def flatten_list_video_dataset(payload: list[dict]) -> list[dict]:
+def flatten_list_video_dataset(payload: list[dict], video_ext: str = ".mp4") -> list[dict]:
     records = []
     for idx, sample in enumerate(payload, start=1):
         query = sample.get("query", sample.get("sentence"))
@@ -129,7 +129,7 @@ def flatten_list_video_dataset(payload: list[dict]) -> list[dict]:
         records.append(
             {
                 "id": str(record_id),
-                "video": ensure_video_name(str(video_name)),
+                "video": ensure_video_name(str(video_name), video_ext),
                 "start_time": coerce_float(start_time),
                 "end_time": coerce_float(end_time),
                 "query": normalize_text(query),
@@ -140,14 +140,14 @@ def flatten_list_video_dataset(payload: list[dict]) -> list[dict]:
     return records
 
 
-def load_test_records(testset_path: str) -> list[dict]:
+def load_test_records(testset_path: str, video_ext: str = ".mp4") -> list[dict]:
     with open(testset_path, "r") as f:
         payload = json.load(f)
 
     if isinstance(payload, dict):
-        return flatten_grouped_video_dataset(payload)
+        return flatten_grouped_video_dataset(payload, video_ext)
     if isinstance(payload, list):
-        return flatten_list_video_dataset(payload)
+        return flatten_list_video_dataset(payload, video_ext)
     raise TypeError(f"Unsupported root JSON type: {type(payload).__name__}")
 
 
@@ -777,7 +777,7 @@ def resolve_raw_video_path(raw_video_root: str, record: dict) -> str:
 
 def process_dataset(args):
     backend = build_backend(args.backend, args.model_path)
-    records = load_test_records(args.test_path)
+    records = load_test_records(args.test_path, args.video_ext)
     if args.max_samples > 0:
         records = records[: args.max_samples]
 
@@ -898,6 +898,7 @@ def main():
         type=str,
         default="outputs/temp_markit_eval",
     )
+    parser.add_argument("--video_ext", default=".mp4", help="Video file extension, default: .mp4")
     args = parser.parse_args()
     process_dataset(args)
 
